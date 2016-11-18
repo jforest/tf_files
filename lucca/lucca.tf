@@ -28,12 +28,7 @@ resource "google_compute_instance" "lucca" {
 
   disk {
     image = "ubuntu-os-cloud/ubuntu-1604-lts"
-  }
-
-  // Local SSD disk
-  disk {
-    type    = "local-ssd"
-    scratch = true
+    size = 50
   }
 
   network_interface {
