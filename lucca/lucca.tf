@@ -19,12 +19,39 @@ resource "google_compute_address" "lucca-address" {
   name = "lucca-address"
 }
 
+resource "google_compute_firewall" "lucca-ssh" {
+  name    = "lucca-ssh"
+  network = "${google_compute_network.lucca.name}"
+  description = "Allow in ssh from joshes home"
+  source_ranges = ["67.253.78.49/32"]
+
+  allow {
+    protocol = "tcp"
+    ports    = ["22"]
+  }
+
+  source_tags = ["josh"]
+}
+
+resource "google_compute_firewall" "lucca-web" {
+  name    = "lucca-web"
+  network = "${google_compute_network.lucca.name}"
+  description = "Allow in web traffic from anywhere"
+
+  allow {
+    protocol = "tcp"
+    ports    = ["80", "443"]
+  }
+
+  source_tags = ["web"]
+}
+
 resource "google_compute_instance" "lucca" {
   name         = "lucca"
   machine_type = "n1-standard-1"
   zone         = "us-east1-d"
 
-  tags = ["lucca.foresj.net", "lucca", "personal"]
+  tags = ["lucca", "personal"]
 
   disk {
     image = "ubuntu-os-cloud/ubuntu-1604-lts"
@@ -32,9 +59,9 @@ resource "google_compute_instance" "lucca" {
   }
 
   network_interface {
-    network = "${google_compute_subnetwork.lucca1.self_link}"
+    subnetwork = "lucca1"
     access_config {
-      nat_ip = "${google_compute_address.lucca-address.self_link}"
+      nat_ip = "${google_compute_address.lucca-address.address}"
     }
   }
 
