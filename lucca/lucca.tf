@@ -1,7 +1,7 @@
 provider "google" {
   credentials = "${file("/Users/jforest/.secure/creds.json")}"
   project     = "learning-149919"
-  region      = "us-east-1"
+  region      = "us-east1"
 }
 
 resource "google_compute_network" "lucca" {
