@@ -1,3 +1,8 @@
+variable "ssh_user" {
+  default = "admin"
+}
+variable "ssh_pub_key_path" {}
+
 provider "google" {
   credentials = "${file("/Users/jforest/.secure/creds.json")}"
   project     = "learning-149919"
@@ -23,14 +28,13 @@ resource "google_compute_firewall" "lucca-ssh" {
   name    = "lucca-ssh"
   network = "${google_compute_network.lucca.name}"
   description = "Allow in ssh from joshes home"
-  source_ranges = ["67.253.78.49/32"]
 
   allow {
     protocol = "tcp"
     ports    = ["22"]
   }
 
-  source_tags = ["josh"]
+  source_ranges = ["67.253.78.49/32"]
 }
 
 resource "google_compute_firewall" "lucca-web" {
@@ -43,18 +47,20 @@ resource "google_compute_firewall" "lucca-web" {
     ports    = ["80", "443"]
   }
 
-  source_tags = ["web"]
+  source_ranges = ["0.0.0.0/0"]
 }
 
 resource "google_compute_instance" "lucca" {
   name         = "lucca"
   machine_type = "n1-standard-1"
   zone         = "us-east1-d"
+  depends_on   = ["google_compute_subnetwork.lucca1"]
 
   tags = ["lucca", "personal"]
 
   disk {
-    image = "ubuntu-os-cloud/ubuntu-1604-lts"
+    image = "debian-cloud/debian-8"
+    type = "pd-ssd"
     size = 50
   }
 
@@ -67,9 +73,8 @@ resource "google_compute_instance" "lucca" {
 
   metadata {
     hostname = "lucca.foresj.net"
+    sshKeys = "${var.ssh_user}:${file(var.ssh_pub_key_path)}"
   }
-
-  metadata_startup_script = "echo hi > /test.txt"
 
   scheduling {
     on_host_maintenance = "MIGRATE"

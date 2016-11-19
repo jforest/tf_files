@@ -6,6 +6,12 @@ variable "project" {}
 variable "region" {
   default = "us-east1"
 }
+variable "ssh_user" {
+  default = "admin"
+}
+variable "ssh_key" {
+  default = "~/.ssh/id_rsa.pub"
+}
 
 
 
@@ -133,11 +139,12 @@ resource "google_compute_instance" "test-bastion" {
   name         = "test-bastion"
   machine_type = "f1-micro"
   zone         = "us-east1-d"
+  depends_on = ["google_compute_subnetwork.fe"]
 
   tags = ["bastion"]
 
   disk {
-    image = "ubuntu-os-cloud/ubuntu-1604-lts"
+    image = "debian-cloud/debian-8"
   }
 
   network_interface {
@@ -149,7 +156,7 @@ resource "google_compute_instance" "test-bastion" {
 
   metadata {
     hostname = "test.foresj.net"
-    sshKeys = "ubuntu:${file("~/.ssh/id_rsa.pub")}"
+    sshKeys = "${var.ssh_user}:${file(var.ssh_key)}"
   }
 
   scheduling {
@@ -167,10 +174,12 @@ resource "google_compute_instance" "www" {
   name = "test-www-${count.index}"
   machine_type = "f1-micro"
   zone = "us-east1-d"
+  depends_on = ["google_compute_subnetwork.www"]
+
   tags = ["www-node","backend"]
 
   disk {
-    image = "ubuntu-os-cloud/ubuntu-1604-lts"
+    image = "debian-cloud/debian-8"
   }
 
   network_interface {
@@ -198,7 +207,7 @@ SCRIPT
 
   metadata {
     hostname = "www${count.index}.foresj.net"
-    sshKeys = "ubuntu:${file("~/.ssh/id_rsa.pub")}"
+    sshKeys = "${var.ssh_user}:${file(var.ssh_key)}"
   }
 }
 
