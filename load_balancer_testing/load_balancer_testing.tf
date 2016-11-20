@@ -68,19 +68,19 @@ resource "google_compute_firewall" "lbtest-ssh" {
   target_tags = ["www-node"]
 }
 
-resource "google_compute_firewall" "www" {
-  name    = "lbtest-www-firewall"
+resource "google_compute_firewall" "mainip" {
+  name = "mainip"
   network = "${google_compute_network.lbtest.name}"
-  description = "Allow in web traffic from anywhere to www-node"
+  description = "Allow http/https in from everywhere"
 
   allow {
     protocol = "tcp"
-    ports    = ["80", "443"]
+    ports = ["80", "443"]
   }
 
   source_ranges = ["0.0.0.0/0"]
-  target_tags = ["www-node"]
 }
+
 
 
 # Load balancer below this
@@ -163,6 +163,9 @@ SCRIPT
 output "www_public_ip" {
   value = "${google_compute_address.www.address}"
 }
-output "www_instance_ip" {
+output "www_instance_public_ip" {
+  value = "${google_compute_instance.www.network_interface.0.assigned_nat_ip}"
+}
+output "www_instance_private_ip" {
   value = "${google_compute_instance.www.network_interface.0.address}"
 }
