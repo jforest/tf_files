@@ -25,42 +25,38 @@ provider "google" {
 
 
 # Network and subnet configs here
-resource "google_compute_network" "test" {
-  name       = "test"
+resource "google_compute_network" "lbtest" {
+  name       = "lbtest"
   auto_create_subnetworks = "false"
 }
 
 resource "google_compute_subnetwork" "fe" {
-  name          = "test-subnet1"
+  name          = "lbtest-subnet1"
   ip_cidr_range = "10.1.0.0/24"
-  network       = "${google_compute_network.test.self_link}"
+  network       = "${google_compute_network.lbtest.self_link}"
   region        = "us-east1"
 }
 
 resource "google_compute_subnetwork" "www" {
-  name          = "test-subnet2"
+  name          = "lbtest-subnet2"
   ip_cidr_range = "10.2.0.0/24"
-  network       = "${google_compute_network.test.self_link}"
+  network       = "${google_compute_network.lbtest.self_link}"
   region        = "us-east1"
 }
 
 
 
 # Static IPs here
-resource "google_compute_address" "bastion" {
-  name = "test-bastion-address"
-}
-
 resource "google_compute_address" "www" {
-  name = "test-www-address"
+  name = "lbtest-www-address"
 }
 
 
 
 # Firewall rules here
-resource "google_compute_firewall" "bastion-ssh" {
-  name    = "test-ssh"
-  network = "${google_compute_network.test.name}"
+resource "google_compute_firewall" "lbtest-ssh" {
+  name    = "lbtest-ssh"
+  network = "${google_compute_network.lbtest.name}"
   description = "Allow in ssh from joshes home"
 
   allow {
@@ -69,12 +65,12 @@ resource "google_compute_firewall" "bastion-ssh" {
   }
 
   source_ranges = ["67.253.78.49/32"]
-  target_tags = ["bastion"]
+  target_tags = ["www-node"]
 }
 
 resource "google_compute_firewall" "www" {
-  name    = "test-www-firewall"
-  network = "${google_compute_network.test.name}"
+  name    = "lbtest-www-firewall"
+  network = "${google_compute_network.lbtest.name}"
   description = "Allow in web traffic from anywhere to www-node"
 
   allow {
@@ -86,45 +82,30 @@ resource "google_compute_firewall" "www" {
   target_tags = ["www-node"]
 }
 
-resource "google_compute_firewall" "internal" {
-  name = "test-internal-ssh"
-  network = "${google_compute_network.test.name}"
-  description = "Allow ssh from bastion -> backend hosts"
-
-  allow {
-    protocol = "tcp"
-    ports = ["22"]
-  }
-
-  source_tags = ["bastion"]
-  target_tags = ["backend"]
-}
-
-
 
 # Load balancer below this
 resource "google_compute_target_pool" "www" {
-  name = "test-www-target-pool"
+  name = "lbtest-www-target-pool"
   instances = ["${google_compute_instance.www.*.self_link}"]
   health_checks = ["${google_compute_http_health_check.http.name}"]
 }
 
 resource "google_compute_forwarding_rule" "http" {
-  name = "test-www-http-forwarding-rule"
+  name = "lbtest-www-http-forwarding-rule"
   target = "${google_compute_target_pool.www.self_link}"
   ip_address = "${google_compute_address.www.address}"
   port_range = "80-80"
 }
 
 resource "google_compute_forwarding_rule" "https" {
-  name = "test-www-https-forwarding-rule"
+  name = "lbtest-www-https-forwarding-rule"
   target = "${google_compute_target_pool.www.self_link}"
   ip_address = "${google_compute_address.www.address}"
   port_range = "443-443"
 }
 
 resource "google_compute_http_health_check" "http" {
-  name = "test-www-http-basic-check"
+  name = "lbtest-www-http-basic-check"
   request_path = "/"
   check_interval_sec = 1
   healthy_threshold = 1
@@ -135,43 +116,8 @@ resource "google_compute_http_health_check" "http" {
 
 
 # Instances go here
-resource "google_compute_instance" "test-bastion" {
-  name         = "test-bastion"
-  machine_type = "f1-micro"
-  zone         = "us-east1-d"
-  depends_on = ["google_compute_subnetwork.fe"]
-
-  tags = ["bastion"]
-
-  disk {
-    image = "debian-cloud/debian-8"
-  }
-
-  network_interface {
-    subnetwork = "test-subnet1"
-    access_config {
-      nat_ip = "${google_compute_address.bastion.address}"
-    }
-  }
-
-  metadata {
-    hostname = "test.foresj.net"
-    sshKeys = "${var.ssh_user}:${file(var.ssh_key)}"
-  }
-
-  scheduling {
-    on_host_maintenance = "MIGRATE"
-    automatic_restart = "true"
-  }
-
-  service_account {
-    scopes = ["userinfo-email", "compute-ro", "storage-ro"]
-  }
-}
-
 resource "google_compute_instance" "www" {
-  count = 2
-  name = "test-www-${count.index}"
+  name = "lbtest-www-1"
   machine_type = "f1-micro"
   zone = "us-east1-d"
   depends_on = ["google_compute_subnetwork.www"]
@@ -183,7 +129,7 @@ resource "google_compute_instance" "www" {
   }
 
   network_interface {
-    subnetwork = "test-subnet2"
+    subnetwork = "lbtest-subnet2"
     access_config {
         # Ephemeral
     }
@@ -217,9 +163,6 @@ SCRIPT
 output "www_public_ip" {
   value = "${google_compute_address.www.address}"
 }
-output "bastion_public_ip" {
-  value = "${google_compute_address.bastion.address}"
-}
-output "www_output" {
+output "www_instance_ip" {
   value = "${google_compute_instance.www.network_interface.0.address}"
 }
