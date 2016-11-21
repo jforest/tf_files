@@ -44,6 +44,18 @@ resource "google_compute_subnetwork" "www" {
   region        = "us-east1"
 }
 
+resource "google_compute_route" "nat" {
+  name        = "no-ip-internet-route"
+  dest_range  = "0.0.0.0/0"
+  network     = "${google_compute_network.test.self_link}"
+  next_hop_instance = "nat1"
+  next_hop_instance_zone = "us-east1-d"
+  priority    = 800
+  tags = ["no-ip"]
+
+  depends_on = ["google_compute_instance.nat"]
+}
+
 
 
 # Static IPs here
@@ -51,8 +63,12 @@ resource "google_compute_address" "bastion" {
   name = "test-bastion-address"
 }
 
-resource "google_compute_address" "www" {
-  name = "test-www-address"
+resource "google_compute_address" "nat" {
+  name = "test-nat-address"
+}
+
+resource "google_compute_global_address" "www" {
+  name = "lbtest-www-address"
 }
 
 
@@ -100,36 +116,78 @@ resource "google_compute_firewall" "internal" {
   target_tags = ["backend"]
 }
 
+resource "google_compute_firewall" "no-ip-to-nat" {
+  name = "test-no-ip-to-nat"
+  network = "${google_compute_network.test.name}"
+  description = "Allow all traffic ports from no-ip to nat"
 
+  allow {
+    protocol = "tcp"
+    ports = ["1-65535"]
+  }
+  allow {
+    protocol = "udp"
+    ports = ["1-65535"]
+  }
+  allow {
+    protocol = "icmp"
+  }
+
+  source_tags = ["no-ip"]
+  target_tags = ["nat"]
+}
 
 # Load balancer below this
-resource "google_compute_target_pool" "www" {
-  name = "test-www-target-pool"
-  instances = ["${google_compute_instance.www.*.self_link}"]
-  health_checks = ["${google_compute_http_health_check.http.name}"]
-}
-
-resource "google_compute_forwarding_rule" "http" {
-  name = "test-www-http-forwarding-rule"
-  target = "${google_compute_target_pool.www.self_link}"
-  ip_address = "${google_compute_address.www.address}"
+resource "google_compute_global_forwarding_rule" "www" {
+  name = "test"
+  target = "${google_compute_target_http_proxy.www.self_link}"
   port_range = "80-80"
+  ip_address = "${google_compute_global_address.www.self_link}"
 }
 
-resource "google_compute_forwarding_rule" "https" {
-  name = "test-www-https-forwarding-rule"
-  target = "${google_compute_target_pool.www.self_link}"
-  ip_address = "${google_compute_address.www.address}"
-  port_range = "443-443"
+resource "google_compute_target_http_proxy" "www" {
+  name        = "test-proxy"
+  description = "a description"
+  url_map     = "${google_compute_url_map.www.self_link}"
 }
 
-resource "google_compute_http_health_check" "http" {
-  name = "test-www-http-basic-check"
-  request_path = "/"
+resource "google_compute_url_map" "www" {
+  name            = "url-map"
+  description     = "a description"
+  default_service = "${google_compute_backend_service.www.self_link}"
+}
+
+resource "google_compute_backend_service" "www" {
+  name        = "www-backend"
+  port_name   = "http"
+  protocol    = "HTTP"
+  timeout_sec = 10
+
+  backend {
+    group = "${google_compute_instance_group.www.self_link}"
+  }
+
+  health_checks = ["${google_compute_http_health_check.www.self_link}"]
+}
+
+resource "google_compute_instance_group" "www" {
+  name = "www-test"
+  description = "www nodes instance group"
+  zone = "us-east1-d"
+
+  instances = ["${google_compute_instance.www.self_link}"]
+
+  named_port {
+    name = "http"
+    port = "80"
+  }
+}
+
+resource "google_compute_http_health_check" "www" {
+  name               = "test"
+  request_path       = "/"
   check_interval_sec = 1
-  healthy_threshold = 1
-  unhealthy_threshold = 10
-  timeout_sec = 1
+  timeout_sec        = 1
 }
 
 
@@ -170,13 +228,12 @@ resource "google_compute_instance" "test-bastion" {
 }
 
 resource "google_compute_instance" "www" {
-  count = 2
-  name = "test-www-${count.index}"
+  name = "test-www-1"
   machine_type = "f1-micro"
   zone = "us-east1-d"
   depends_on = ["google_compute_subnetwork.www"]
 
-  tags = ["www-node","backend"]
+  tags = ["www-node","backend","no-ip"]
 
   disk {
     image = "debian-cloud/debian-8"
@@ -184,9 +241,6 @@ resource "google_compute_instance" "www" {
 
   network_interface {
     subnetwork = "test-subnet2"
-    access_config {
-        # Ephemeral
-    }
   }
 
   scheduling {
@@ -207,7 +261,47 @@ service nginx start
 SCRIPT
 
   metadata {
-    hostname = "www${count.index}.foresj.net"
+    hostname = "www1.foresj.net"
+    sshKeys = "${var.ssh_user}:${file(var.ssh_key)}"
+  }
+}
+
+resource "google_compute_instance" "nat" {
+  name = "nat1"
+  machine_type = "f1-micro"
+  zone = "us-east1-d"
+  depends_on = ["google_compute_subnetwork.fe"]
+  can_ip_forward = "true"
+
+  tags = ["nat"]
+
+  disk {
+    image = "debian-cloud/debian-8"
+  }
+
+  network_interface {
+    subnetwork = "test-subnet1"
+    access_config {
+      nat_ip = "${google_compute_address.nat.address}"
+    }
+  }
+
+  scheduling {
+    on_host_maintenance = "MIGRATE"
+    automatic_restart = "true"
+  }
+
+  service_account {
+    scopes = ["compute-ro"]
+  }
+
+  metadata_startup_script = <<SCRIPT
+sysctl -w net.ipv4.ip_forward=1
+iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+SCRIPT
+
+  metadata {
+    hostname = "nat.foresj.net"
     sshKeys = "${var.ssh_user}:${file(var.ssh_key)}"
   }
 }
@@ -215,11 +309,14 @@ SCRIPT
 
 
 output "www_public_ip" {
-  value = "${google_compute_address.www.address}"
+  value = "${google_compute_global_address.www.address}"
 }
 output "bastion_public_ip" {
   value = "${google_compute_address.bastion.address}"
 }
-output "www_output" {
+output "nat_public_ip" {
+  value = "${google_compute_address.nat.address}"
+}
+output "www_private_ip" {
   value = "${google_compute_instance.www.network_interface.0.address}"
 }
