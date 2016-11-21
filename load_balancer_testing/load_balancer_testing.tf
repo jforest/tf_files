@@ -164,14 +164,10 @@ resource "google_compute_instance" "www" {
     scopes = ["compute-ro"]
   }
 
-  metadata_startup_script = <<SCRIPT
-apt-get update
-apt-get -y install nginx
-service nginx start
-SCRIPT
+  metadata_startup_script = "${file("scripts/www.sh")}"
 
   metadata {
-    hostname = "www${count.index}.foresj.net"
+    hostname = "www.foresj.net"
     sshKeys = "${var.ssh_user}:${file(var.ssh_key)}"
   }
 }
