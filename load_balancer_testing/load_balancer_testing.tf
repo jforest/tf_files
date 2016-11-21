@@ -47,7 +47,7 @@ resource "google_compute_subnetwork" "www" {
 
 
 # Static IPs here
-resource "google_compute_address" "www" {
+resource "google_compute_global_address" "www" {
   name = "lbtest-www-address"
 }
 
@@ -84,33 +84,56 @@ resource "google_compute_firewall" "mainip" {
 
 
 # Load balancer below this
-resource "google_compute_target_pool" "www" {
-  name = "lbtest-www-target-pool"
-  instances = ["${google_compute_instance.www.*.self_link}"]
-  health_checks = ["${google_compute_http_health_check.http.name}"]
-}
-
-resource "google_compute_forwarding_rule" "http" {
-  name = "lbtest-www-http-forwarding-rule"
-  target = "${google_compute_target_pool.www.self_link}"
-  ip_address = "${google_compute_address.www.address}"
+resource "google_compute_global_forwarding_rule" "www" {
+  name = "test"
+  target = "${google_compute_target_http_proxy.www.self_link}"
   port_range = "80-80"
+  ip_address = "${google_compute_global_address.www.self_link}"
 }
 
-resource "google_compute_forwarding_rule" "https" {
-  name = "lbtest-www-https-forwarding-rule"
-  target = "${google_compute_target_pool.www.self_link}"
-  ip_address = "${google_compute_address.www.address}"
-  port_range = "443-443"
+resource "google_compute_target_http_proxy" "www" {
+  name        = "test-proxy"
+  description = "a description"
+  url_map     = "${google_compute_url_map.www.self_link}"
 }
 
-resource "google_compute_http_health_check" "http" {
-  name = "lbtest-www-http-basic-check"
-  request_path = "/"
+resource "google_compute_url_map" "www" {
+  name            = "url-map"
+  description     = "a description"
+  default_service = "${google_compute_backend_service.www.self_link}"
+}
+
+resource "google_compute_backend_service" "www" {
+  name        = "www-backend"
+  port_name   = "http"
+  protocol    = "HTTP"
+  timeout_sec = 10
+
+  backend {
+    group = "${google_compute_instance_group.www.self_link}"
+  }
+
+  health_checks = ["${google_compute_http_health_check.www.self_link}"]
+}
+
+resource "google_compute_instance_group" "www" {
+  name = "www-test"
+  description = "www nodes instance group"
+  zone = "us-east1-d"
+  
+  instances = ["${google_compute_instance.www.self_link}"]
+
+  named_port {
+    name = "http"
+    port = "80"
+  }
+}
+
+resource "google_compute_http_health_check" "www" {
+  name               = "test"
+  request_path       = "/"
   check_interval_sec = 1
-  healthy_threshold = 1
-  unhealthy_threshold = 10
-  timeout_sec = 1
+  timeout_sec        = 1
 }
 
 
@@ -130,9 +153,6 @@ resource "google_compute_instance" "www" {
 
   network_interface {
     subnetwork = "lbtest-subnet2"
-    access_config {
-        # Ephemeral
-    }
   }
 
   scheduling {
@@ -145,10 +165,8 @@ resource "google_compute_instance" "www" {
   }
 
   metadata_startup_script = <<SCRIPT
-apt-get -y install aptitude
-aptitude -y update
-#aptitude -y safe-upgrade
-aptitude install -y nginx
+apt-get update
+apt-get -y install nginx
 service nginx start
 SCRIPT
 
@@ -161,10 +179,7 @@ SCRIPT
 
 
 output "www_public_ip" {
-  value = "${google_compute_address.www.address}"
-}
-output "www_instance_public_ip" {
-  value = "${google_compute_instance.www.network_interface.0.assigned_nat_ip}"
+  value = "${google_compute_global_address.www.address}"
 }
 output "www_instance_private_ip" {
   value = "${google_compute_instance.www.network_interface.0.address}"
