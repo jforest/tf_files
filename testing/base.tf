@@ -231,7 +231,7 @@ resource "google_compute_instance" "www" {
   name = "test-www-1"
   machine_type = "f1-micro"
   zone = "us-east1-d"
-  depends_on = ["google_compute_subnetwork.www"]
+  depends_on = ["google_compute_subnetwork.www","google_compute_firewall.no-ip-to-nat","google_compute_route.nat"]
 
   tags = ["www-node","backend","no-ip"]
 
